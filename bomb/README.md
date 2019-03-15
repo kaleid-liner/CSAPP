@@ -268,4 +268,4 @@ ionufg
 
 接下来留一张真正的通关纪念，
 
-![secret_phase_cleared](C:/Users/kaleid_liner/Pictures/secret_phase_cleared.png)
+![secret_phase_cleared](assets/secret_phase_cleared.png)
