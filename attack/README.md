@@ -4,7 +4,7 @@
 
 **学号**：PB17111586
 
-**代码地址**：[Github](https://github.com/kaleid-liner/CSAPP/tree/master/bomb)(在DDL之后我会将此仓库make public)
+**代码地址**：[Github](https://github.com/kaleid-liner/CSAPP/tree/master/attack)(在DDL之后我会将此仓库make public)
 
 **实验环境**：IDA Pro on Windows 10、 gdbserver on Ubuntu（虚拟机）
 
