@@ -35,9 +35,17 @@ int main(int argc, char *argv[])
     while (1) {
         connfd = accept(listenfd, (struct sockaddr *)&client_addr, &sock_len);
         if (connfd >= 0) {
-            proxy(connfd);
+            if (fork() == 0) {
+                close(listenfd);
+                proxy(connfd);
+                close(connfd);
+                exit(0);
+            }
+            close(connfd);
         }
     }
+
+    close(listenfd);
 
     return 0;
 }
@@ -123,7 +131,6 @@ void proxy(int connfd)
     handle_response(clientfd, connfd);
 
     close(clientfd);
-    close(connfd);
 }
 
 void forward_request(int clientfd,
