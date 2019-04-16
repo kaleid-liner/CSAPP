@@ -141,10 +141,10 @@ void forward_request(int clientfd,
     char usrbuf[MAXLINE];
     ssize_t recv_n;
     while ((recv_n = rio_readlineb(headers, usrbuf, MAXLINE)) > 2) { // not \r\n
-        if (!strncmp(usrbuf, "Host:", strlen("Host:"))
-            || !strncmp(usrbuf, "User-Agent:", strlen("User-Agent:"))
-            || !strncmp(usrbuf, "Connection:", strlen("Connection:"))
-            || !strncmp(usrbuf, "Proxy-Connection:", strlen("Proxy-Connection:"))) {
+        if (!strncasecmp(usrbuf, "Host:", strlen("Host:"))
+            || !strncasecmp(usrbuf, "User-Agent:", strlen("User-Agent:"))
+            || !strncasecmp(usrbuf, "Connection:", strlen("Connection:"))
+            || !strncasecmp(usrbuf, "Proxy-Connection:", strlen("Proxy-Connection:"))) {
             continue;
         }
         else {
