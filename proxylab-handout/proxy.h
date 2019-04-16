@@ -15,6 +15,7 @@ struct RequestInfo {
     char host[HOST_NAME_MAX];
     int port;
     char uri[MAX_URL];
+    char url[MAX_URL]; //this will work as key of cache
     char method[MAX_METHOD];
     char version[MAX_VERSION];
 };
@@ -26,5 +27,6 @@ void forward_request(int clientfd, rio_t *headers, const RequestInfo_t *request)
 void proxy(int connfd);
 int parse_url(char *url, RequestInfo_t *request);
 void handle_response(int clientfd, int connfd);
+void *thread_handler(void *pconnfd);
 
 #endif

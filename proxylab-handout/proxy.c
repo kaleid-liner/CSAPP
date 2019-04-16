@@ -34,20 +34,26 @@ int main(int argc, char *argv[])
     
     while (1) {
         connfd = accept(listenfd, (struct sockaddr *)&client_addr, &sock_len);
+        int *pconnfd = malloc(sizeof(int));
+        *pconnfd = connfd;
         if (connfd >= 0) {
-            if (fork() == 0) {
-                close(listenfd);
-                proxy(connfd);
-                close(connfd);
-                exit(0);
-            }
-            close(connfd);
+            pthread_t thread;
+            pthread_create(&thread, NULL, thread_handler, pconnfd);
         }
     }
 
     close(listenfd);
 
     return 0;
+}
+
+void *thread_handler(void *pconnfd)
+{
+    int connfd = *(int *)pconnfd;
+    proxy(connfd);
+    close(connfd);
+    free(pconnfd);
+    return NULL;
 }
 
 /*
@@ -71,6 +77,7 @@ int parse_url(char *url, RequestInfo_t *request)
     if (sscanf(url, url_format, buf) <= 0) {
         return -1;
     }
+    strncpy(request->url, buf, MAX_URL - 1);
 
     sscanf(buf, host_uri_format, host, uri);
 
