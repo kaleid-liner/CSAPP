@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <strings.h>
 #include "csapp.h"
 #include "proxy.h"
 
@@ -22,8 +23,8 @@ int main(int argc, char *argv[])
 
     int connfd;
     int listenfd;
-    struct sockaddr client_addr;
-    socklen_t sock_len;
+    struct sockaddr_in client_addr;
+    socklen_t sock_len = sizeof(client_addr);
 
     listenfd = open_listenfd(argv[1]);
     if (listenfd < 0) {
@@ -32,7 +33,7 @@ int main(int argc, char *argv[])
     }
     
     while (1) {
-        connfd = accept(listenfd, &client_addr, &sock_len);
+        connfd = accept(listenfd, (struct sockaddr *)&client_addr, &sock_len);
         if (connfd >= 0) {
             proxy(connfd);
         }
@@ -96,7 +97,7 @@ void proxy(int connfd)
     char version[MAX_VERSION];
     char url[MAX_URL];
 
-    if (sscanf(buf, "%s %s %[\n]", method, url, version) != 3) {
+    if (sscanf(buf, "%s %s %[^\r\n]", method, url, version) != 3) {
         fprintf(stderr, "malformed http request\n");
         return;
     }
@@ -131,7 +132,7 @@ void forward_request(int clientfd,
 {
     char buf[MAXLINE];
     sprintf(buf, "%s %s %s\r\n", request->method, request->uri, "HTTP/1.0");
-    sprintf(buf, "%sHOST: %s\r\n", buf, request->host);
+    sprintf(buf, "%sHost: %s\r\n", buf, request->host);
     sprintf(buf, "%s%s", buf, user_agent_hdr);
     sprintf(buf, "%sConnection: close\r\n", buf);
     sprintf(buf, "%sProxy-Connection: close\r\n", buf);
@@ -140,7 +141,7 @@ void forward_request(int clientfd,
     char usrbuf[MAXLINE];
     ssize_t recv_n;
     while ((recv_n = rio_readlineb(headers, usrbuf, MAXLINE)) > 2) { // not \r\n
-        if (!strncmp(usrbuf, "HOST:", strlen("HOST:"))
+        if (!strncmp(usrbuf, "Host:", strlen("Host:"))
             || !strncmp(usrbuf, "User-Agent:", strlen("User-Agent:"))
             || !strncmp(usrbuf, "Connection:", strlen("Connection:"))
             || !strncmp(usrbuf, "Proxy-Connection:", strlen("Proxy-Connection:"))) {
@@ -149,7 +150,7 @@ void forward_request(int clientfd,
         else {
             // here my proxy just truncate headers larger than 8k
             if (recv_n + buf_size > MAXLINE - 2) break;
-            memcpy(buf, usrbuf, recv_n);
+            memcpy(buf + buf_size, usrbuf, recv_n);
             buf_size += recv_n;
         }
     }
@@ -182,15 +183,16 @@ void handle_response(int clientfd, int connfd)
     ssize_t recv_n;
 
     while ((recv_n = rio_readlineb(&rio, usrbuf, MAXLINE)) > 2) {
-        if (strncmp(usrbuf, "Content-length:", strlen("Content-length:")) == 0) {
-            if (sscanf(usrbuf, "Content-length:%ld", &content_length) == 0) {
+        size_t lens = strlen("Content-Length:");
+        if (strncasecmp(usrbuf, "Content-Length:", lens) == 0) {
+            if (sscanf(usrbuf + lens, "%ld", &content_length) == 0) {
                 fprintf(stderr, "malformed http response\n");
                 return;
             }
         }
         // consume and truncate the header
         if (recv_n + buf_size > MAXLINE - 2) continue;
-        memcpy(buf, usrbuf, recv_n);
+        memcpy(buf + buf_size, usrbuf, recv_n);
         buf_size += recv_n;
     }
 
@@ -205,12 +207,17 @@ void handle_response(int clientfd, int connfd)
     // body
     char *body_buf = (char *)malloc(content_length);
     if (body_buf) {
-        if (rio_readn(clientfd, body_buf, content_length) < content_length) {
+        if ((recv_n = rio_readnb(&rio, body_buf, content_length)) < content_length) {
             fprintf(stderr, "warning: potential packet loss due to unknown reason\n");
+            content_length -= recv_n;
         }
     }
+    else {
+        fprintf(stderr, "memory insufficiency or entity too large\n");
+        return;
+    }
     
-    rio_writen(connfd, body_buf, content_length);
+    rio_writen(connfd, body_buf, recv_n);
 }
 
 int open_clientfd_n(char *host, int port)
