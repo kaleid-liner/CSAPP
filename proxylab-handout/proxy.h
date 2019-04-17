@@ -26,7 +26,7 @@ int open_clientfd_n(char *host, int port);
 void forward_request(int clientfd, rio_t *headers, const RequestInfo_t *request);
 void proxy(int connfd);
 int parse_url(char *url, RequestInfo_t *request);
-void handle_response(int clientfd, int connfd);
+void handle_response(int clientfd, int connfd, const RequestInfo_t *request);
 void *thread_handler(void *pconnfd);
 
 #endif

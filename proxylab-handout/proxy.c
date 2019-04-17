@@ -3,10 +3,16 @@
 #include <strings.h>
 #include "csapp.h"
 #include "proxy.h"
+#include "cache.h"
 
 
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
+
+static cache_t cache;
+static sem_t mutex;
+
+void send_cached_response(int connfd, cache_content_t data);
 
 int main(int argc, char *argv[])
 {
@@ -31,7 +37,9 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Can't listen on port %d\n", port);
         exit(0);
     }
-    
+
+    cache_new(&cache);
+    sem_init(&mutex, 0, 1);
     while (1) {
         connfd = accept(listenfd, (struct sockaddr *)&client_addr, &sock_len);
         int *pconnfd = malloc(sizeof(int));
@@ -77,12 +85,15 @@ int parse_url(char *url, RequestInfo_t *request)
     if (sscanf(url, url_format, buf) <= 0) {
         return -1;
     }
-    strncpy(request->url, buf, MAX_URL - 1);
 
     sscanf(buf, host_uri_format, host, uri);
 
     strncpy(request->uri, uri, MAX_URL - 1);
     request->uri[MAX_URL - 1] = '\0';
+    if (request->uri[0] == '\0') {
+        request->uri[0] = '/';
+        request->uri[1] = '\0';
+    }
 
     char *port_start = strchr(host, ':');
     if (port_start == NULL) {
@@ -94,6 +105,13 @@ int parse_url(char *url, RequestInfo_t *request)
     }
     strncpy(request->host, host, HOST_NAME_MAX - 1);
     request->host[HOST_NAME_MAX - 1] = '\0';
+    size_t url_len = snprintf(request->url, MAX_URL, "%s%s", request->host, request->uri);
+    if (url_len >= MAX_URL) {
+        url_len = MAX_URL - 1;
+    }
+    if (request->url[url_len - 1] == '/') {
+        request->url[url_len - 1] = '\0';
+    }
 
     request->port = port;
 
@@ -124,6 +142,15 @@ void proxy(int connfd)
         fprintf(stderr, "illegal url %s\n", url);
         return;
     }
+
+    cache_content_t *data;
+    P(&mutex);
+    if (find_cache(&cache, req_info.url, &data) == 0) {
+        send_cached_response(connfd, *data);
+        return;
+    }
+    V(&mutex);
+
     strncpy(req_info.method, method, MAX_METHOD - 1);
     strncpy(req_info.version, version, MAX_VERSION - 1);
     req_info.method[MAX_METHOD - 1] = '\0';
@@ -135,7 +162,7 @@ void proxy(int connfd)
     }
     forward_request(clientfd, &rio, &req_info);
 
-    handle_response(clientfd, connfd);
+    handle_response(clientfd, connfd, &req_info);
 
     close(clientfd);
 }
@@ -181,12 +208,14 @@ void forward_request(int clientfd,
  */
 }
 
-void handle_response(int clientfd, int connfd)
+void handle_response(int clientfd, 
+                     int connfd, 
+                     const RequestInfo_t *request)
 {
     rio_t rio;
     char buf[MAXLINE];
     char usrbuf[MAXLINE];
-    ssize_t content_length = -1;
+    size_t content_length = -1;
     ssize_t buf_size;
 
     rio_readinitb(&rio, clientfd);
@@ -214,7 +243,7 @@ void handle_response(int clientfd, int connfd)
     buf[buf_size + 1] = '\n';
     rio_writen(connfd, buf, buf_size + 2);
 
-    if (content_length < 0) { // no response body
+    if (content_length == -1) { // no response body
         return;
     }
 
@@ -223,15 +252,19 @@ void handle_response(int clientfd, int connfd)
     if (body_buf) {
         if ((recv_n = rio_readnb(&rio, body_buf, content_length)) < content_length) {
             fprintf(stderr, "warning: potential packet loss due to unknown reason\n");
-            content_length -= recv_n;
         }
     }
     else {
         fprintf(stderr, "memory insufficiency or entity too large\n");
         return;
     }
+
+    P(&mutex);
+    insert_cache(&cache, request->url, buf, buf_size + 2, body_buf, recv_n);
+    V(&mutex);
     
     rio_writen(connfd, body_buf, recv_n);
+    free(body_buf);
 }
 
 int open_clientfd_n(char *host, int port)
@@ -239,4 +272,9 @@ int open_clientfd_n(char *host, int port)
     char p[16];
     sprintf(p, "%d", port);
     return open_clientfd(host, p);
+}
+
+void send_cached_response(int connfd, cache_content_t data)
+{
+    rio_writen(connfd, data.data, data.content_length);
 }
